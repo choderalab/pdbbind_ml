@@ -2,10 +2,11 @@
 Convert PDBBind index files into a CSV file.
 """
 import argparse
-from openeye import oechem
 import os
 import pandas
 import re
+
+from asapdiscovery.data.openeye import load_openeye_sdf, oechem
 
 # Strings to avoid floating point weirdness when saving CSV files
 UNITS_MULT = {
@@ -36,16 +37,52 @@ def get_smiles(fn):
     oechem.OEReadMolecule(ifs, mol)
     ifs.close()
 
-    # # Delete explicit hydrogens
-    # for a in mol.GetAtoms():
-    #     if a.GetAtomicNum() == 1:
-    #         mol.DeleteAtom(a)
-
     # Get smiles
     return oechem.OEMolToSmiles(mol)
 
 
-def parse_index(fn, str_dir):
+def get_smiles_rcsb(ligand_id, lig_dir):
+    """
+    Download (if necessary) ligand SDF file from RCSB and pull SMILES from there.
+
+    Parameters
+    ----------
+    ligand_id : str
+        RSCB ligand ID
+    lig_dir : str
+        Local directory to save ligaqnd files to
+
+    Returns
+    -------
+    str
+        Ligand SMILES
+    """
+    from asapdiscovery.data.utils import download_file
+
+    url_base = "https://files.rcsb.org/ligands/download/{}_ideal.sdf"
+
+    local_path = os.path.join(lig_dir, f"{ligand_id}_ideal.sdf")
+    if not os.path.exists(local_path):
+        url = url_base.format(ligand_id)
+        print(f"Downloading {ligand_id} from RCSB", flush=True)
+        response = download_file(url, local_path)
+        if response.status_code != 200:
+            print(f"Couldn't download ligand file for {ligand_id}", flush=True)
+            return ""
+
+    mol = load_openeye_sdf(local_path)
+    # This won't tell us the stereochemistry of the ligand in the structure,
+    #  but that doesn't matter for the graph models, and the 3D models don't
+    #  need the SMILES
+    smiles = oechem.OEGetSDData(mol, "OPENEYE_ISO_SMILES")
+    if smiles == "":
+        # Doesn't have the data tag for some reason
+        smiles = oechem.OEMolToSmiles(mol)
+
+    return smiles
+
+
+def parse_index(fn, str_dir, lig_dir=None):
     df_cols = [
         "PDB_id",
         "ligand_id",
@@ -56,8 +93,11 @@ def parse_index(fn, str_dir):
         "measurement_value",
         "pdb_path",
         "sdf_path",
-        "smiles",
+        "str_smiles",
     ]
+    # If we're pulling ligands from RCSB, we also need a column for them
+    if lig_dir:
+        df_cols += ["iso_smiles"]
     entries = []
     for line in open(fn).readlines():
         if line[0] == "#":
@@ -102,8 +142,11 @@ def parse_index(fn, str_dir):
         entry.extend([prot_fn, lig_fn])
 
         # Load SMILES
-        smiles = get_smiles(lig_fn)
-        entry.append(smiles)
+        str_smiles = get_smiles(lig_fn)
+        entry += [str_smiles]
+        if lig_dir:
+            iso_smiles = get_smiles_rcsb(ligand_id, lig_dir)
+            entry += [iso_smiles]
 
         entries.append(entry)
 
@@ -122,6 +165,10 @@ def get_args():
     )
     parser.add_argument("-o", "--out_file", required=True, help="Output CSV file.")
 
+    parser.add_argument(
+        "-l", "--lig_dir", help="Directory to download ligand files from RCSB."
+    )
+
     return parser.parse_args()
 
 
@@ -129,7 +176,7 @@ def main():
     args = get_args()
 
     # Parse all index files
-    all_dfs = [parse_index(fn, args.str_dir) for fn in args.in_files]
+    all_dfs = [parse_index(fn, args.str_dir, args.lig_dir) for fn in args.in_files]
     # Combine and save
     df = pandas.concat(all_dfs)
     df.to_csv(args.out_file)
