@@ -7,7 +7,10 @@ gives the index of the cluster that the given ligand was placed in.
 """
 
 import argparse
+import multiprocessing as mp
+import numpy as np
 from openeye import oechem, oegraphsim
+import os
 import pandas
 from rdkit.ML.Cluster import Butina
 
@@ -51,6 +54,10 @@ def build_fp_db(smiles_list, ligand_ids):
     return fpdb, ligand_idx_dict
 
 
+def mp_func(fp, fpdb):
+    return [s.GetScore() for s in fpdb.GetScores(fp)]
+
+
 ################################################################################
 def get_args():
     parser = argparse.ArgumentParser(description="")
@@ -60,6 +67,14 @@ def get_args():
 
     parser.add_argument(
         "-c", "--cache_file", help="Optional file to save the full distance matrix to."
+    )
+
+    parser.add_argument(
+        "-n",
+        "--num_procs",
+        type=int,
+        default=1,
+        help="Number of concurrent processes to run.",
     )
 
     return parser.parse_args()
@@ -79,6 +94,41 @@ def main():
 
     fpdb, ligand_idx_dict = build_fp_db(df[smi_col], df["ligand_id"])
     print(fpdb.NumFingerPrints(), len(ligand_idx_dict), flush=True)
+
+    if args.cache_file and os.path.exists(args.cache_file):
+        print("Loading similarities from cache file.", flush=True)
+        all_sims = np.loadtxt(args.cache)
+    else:
+        print("Calculating similarities.", flush=True)
+        # mp_args = [(fp, fpdb) for fp in fpdb.GetFingerPrints()]
+        # n_procs = min(args.num_procs, len(mp_args), mp.cpu_count())
+        # with mp.Pool(processes=n_procs) as pool:
+        # all_sims = np.asarray(pool.starmap(mp_func, mp_args))
+        all_sims = np.asarray(
+            [
+                [s.GetScore() for s in fpdb.GetScores(fp)]
+                for fp in fpdb.GetFingerPrints()
+            ]
+        )
+
+        if args.cache_file:
+            np.savetxt(args.cache_file, all_sims)
+
+    print("Clustering", flush=True)
+    all_dists = 1 - all_sims
+    # try 0.2 as cutoff
+    all_clusters = Butina.ClusterData(dists, all_dists.shape[0], 0.2, isDistData=True)
+
+    lig_clusters = {}
+    idx_lig_dict = {idx: lig for lig, idx in ligand_idx_dict.items() if idx != -1}
+    for i, cl in enumerate(all_clusters):
+        for lig_idx in cl:
+            lig_clusters[idx_lig_dict[lig_idx]] = i
+
+    out_df = pandas.DataFrame(
+        {"ligand_id": lig_clusters.keys(), "cluster": lig_clusters.values()}
+    )
+    out_df.to_csv(args.out_file)
 
 
 if __name__ == "__main__":
