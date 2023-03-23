@@ -97,13 +97,14 @@ def main():
 
     if args.cache_file and os.path.exists(args.cache_file):
         print("Loading similarities from cache file.", flush=True)
-        all_sims = np.loadtxt(args.cache)
+        all_sims = np.loadtxt(args.cache_file)
     else:
         print("Calculating similarities.", flush=True)
         # mp_args = [(fp, fpdb) for fp in fpdb.GetFingerPrints()]
         # n_procs = min(args.num_procs, len(mp_args), mp.cpu_count())
         # with mp.Pool(processes=n_procs) as pool:
         # all_sims = np.asarray(pool.starmap(mp_func, mp_args))
+        # can redo this at some point to not calculate unneccessary values
         all_sims = np.asarray(
             [
                 [s.GetScore() for s in fpdb.GetScores(fp)]
@@ -116,8 +117,11 @@ def main():
 
     print("Clustering", flush=True)
     all_dists = 1 - all_sims
+    n_mols = all_dists.shape[0]
+    # Get the lower triangular entries, not including the diagonal (k=-1)
+    all_dists = all_dists[np.tril_indices_from(all_dists, k=-1)]
     # try 0.2 as cutoff
-    all_clusters = Butina.ClusterData(dists, all_dists.shape[0], 0.2, isDistData=True)
+    all_clusters = Butina.ClusterData(all_dists, n_mols, 0.2, isDistData=True)
 
     lig_clusters = {}
     idx_lig_dict = {idx: lig for lig, idx in ligand_idx_dict.items() if idx != -1}
