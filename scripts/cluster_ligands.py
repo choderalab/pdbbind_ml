@@ -77,6 +77,14 @@ def get_args():
         help="Number of concurrent processes to run.",
     )
 
+    parser.add_argument(
+        "-t",
+        "--thresh",
+        type=float,
+        default=0.5,
+        help="Cutoff threshold for clustering.",
+    )
+
     return parser.parse_args()
 
 
@@ -120,8 +128,7 @@ def main():
     n_mols = all_dists.shape[0]
     # Get the lower triangular entries, not including the diagonal (k=-1)
     all_dists = all_dists[np.tril_indices_from(all_dists, k=-1)]
-    # try 0.2 as cutoff
-    all_clusters = Butina.ClusterData(all_dists, n_mols, 0.2, isDistData=True)
+    all_clusters = Butina.ClusterData(all_dists, n_mols, args.thresh, isDistData=True)
 
     lig_clusters = {}
     idx_lig_dict = {idx: lig for lig, idx in ligand_idx_dict.items() if idx != -1}
