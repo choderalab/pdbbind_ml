@@ -54,6 +54,66 @@ def build_fp_db(smiles_list, ligand_ids):
     return fpdb, ligand_idx_dict
 
 
+def cluster_mols(sim_arr, cutoff, ligand_idx_dict):
+    """
+    Cluster molecules based on a similarity matrix.
+
+    Parameters
+    ----------
+    sim_arr : np.ndarray
+        Square matrix of molecule to molecule similarity
+    cutoff : float
+        Cluster cutoff
+    ligand_idx_dict : Dict[str, int]
+        Mapping from ligand id to index in fingerprint database
+
+    Returns
+    -------
+    Dict[str, int]
+        Dict mapping ligand id to cluster idx
+    """
+    all_dists = 1 - sim_arr
+    n_mols = all_dists.shape[0]
+    # Get the lower triangular entries, not including the diagonal (k=-1)
+    all_dists = all_dists[np.tril_indices_from(all_dists, k=-1)]
+    all_clusters = Butina.ClusterData(all_dists, n_mols, cutoff, isDistData=True)
+
+    lig_clusters = {}
+    idx_lig_dict = {idx: lig for lig, idx in ligand_idx_dict.items() if idx != -1}
+    for i, cl in enumerate(all_clusters):
+        for lig_idx in cl:
+            lig_clusters[idx_lig_dict[lig_idx]] = i
+
+    return lig_clusters
+
+
+def load_fp_db(in_file):
+    """
+    Load CSV file and convert to fingerprint database.
+
+    Parameters
+    ----------
+    in_file : str
+
+    Returns
+    -------
+    oegraphsim.OEFPDatabase
+        OE fingerprint database containing all the given SMILES
+    Dict[str, int]
+        Mapping from ligand id to index in fingerprint database
+    """
+
+    df = pandas.read_csv(in_file, index_col=0)
+    if "str_smiles" in df.columns:
+        smi_col = "str_smiles"
+    elif "iso_smiles" in df.columns:
+        smi_col = "iso_smiles"
+    else:
+        raise RuntimeError("Couldn't find valid SMILES column.")
+
+    return build_fp_db(df[smi_col], df["ligand_id"])
+
+
 def mp_func(fp, fpdb):
     return [s.GetScore() for s in fpdb.GetScores(fp)]
 
@@ -92,15 +152,7 @@ def main():
     args = get_args()
 
     # Load input
-    df = pandas.read_csv(args.in_file, index_col=0)
-    if "str_smiles" in df.columns:
-        smi_col = "str_smiles"
-    elif "iso_smiles" in df.columns:
-        smi_col = "iso_smiles"
-    else:
-        raise RuntimeError("Couldn't find valid SMILES column.")
-
-    fpdb, ligand_idx_dict = build_fp_db(df[smi_col], df["ligand_id"])
+    fpdb, ligand_idx_dict = load_fp_db(args.in_file)
     print(fpdb.NumFingerPrints(), len(ligand_idx_dict), flush=True)
 
     if args.cache_file and os.path.exists(args.cache_file):
@@ -124,17 +176,7 @@ def main():
             np.savetxt(args.cache_file, all_sims)
 
     print("Clustering", flush=True)
-    all_dists = 1 - all_sims
-    n_mols = all_dists.shape[0]
-    # Get the lower triangular entries, not including the diagonal (k=-1)
-    all_dists = all_dists[np.tril_indices_from(all_dists, k=-1)]
-    all_clusters = Butina.ClusterData(all_dists, n_mols, args.thresh, isDistData=True)
-
-    lig_clusters = {}
-    idx_lig_dict = {idx: lig for lig, idx in ligand_idx_dict.items() if idx != -1}
-    for i, cl in enumerate(all_clusters):
-        for lig_idx in cl:
-            lig_clusters[idx_lig_dict[lig_idx]] = i
+    lig_clusters = cluster_mols(all_sims, args.thresh, ligand_idx_dict)
 
     out_df = pandas.DataFrame(
         {"ligand_id": lig_clusters.keys(), "cluster": lig_clusters.values()}
