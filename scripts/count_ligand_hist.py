@@ -9,7 +9,18 @@ def get_args():
     parser = argparse.ArgumentParser(description="")
 
     parser.add_argument("-i", "--in_file", required=True, help="Input CSV file.")
-    parser.add_argument("-o", "--out_file", required=True, help="Output base filename.")
+    parser.add_argument(
+        "-lo",
+        "--ligands_out",
+        required=True,
+        help="Output filename for counts of each ligand.",
+    )
+    parser.add_argument(
+        "-co",
+        "--counts_out",
+        required=True,
+        help="Output base filename for counts of counts.",
+    )
 
     return parser.parse_args()
 
@@ -23,6 +34,7 @@ def main():
     # Count occurrences of each ligand id
     lig_counts = df["ligand_id"].value_counts().to_frame().reset_index()
     lig_counts = lig_counts.rename(columns={"index": "ligand_id", "ligand_id": "count"})
+    lig_counts.to_csv(args.ligands_out, index=False)
 
     # Count occurrences of each count
     count_counts = lig_counts["count"].value_counts().to_frame().reset_index()
@@ -43,9 +55,9 @@ def main():
     ax.set_xlabel("Ligand Occurrences")
     ax.set_ylabel("Number of Ligands")
     ax.set_title("Ligand Distribution in PDBBind")
-    fig.savefig(f"{args.out_file}.png", bbox_inches="tight", dpi=200)
+    fig.savefig(f"{args.counts_out}.png", bbox_inches="tight", dpi=200)
 
-    count_counts.to_csv(f"{args.out_file}.csv", index=False)
+    count_counts.to_csv(f"{args.counts_out}.csv", index=False)
 
 
 if __name__ == "__main__":
