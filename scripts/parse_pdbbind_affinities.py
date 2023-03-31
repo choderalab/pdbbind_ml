@@ -78,7 +78,7 @@ def get_smiles_rcsb(ligand_id, lig_dir):
     return smiles
 
 
-def parse_index(fn, str_dir, lig_dir=None):
+def parse_index(fn, str_dir, lig_dir=None, lig_map={}):
     df_cols = [
         "PDB_id",
         "ligand_id",
@@ -105,7 +105,10 @@ def parse_index(fn, str_dir, lig_dir=None):
         if (ligand_id[0] == "(") and (ligand_id[-1] == ")"):
             ligand_id = ligand_id.strip("()")
         else:
-            ligand_id = pdb_id
+            try:
+                ligand_id = lig_map[pdb_id]
+            except KeyError:
+                ligand_id = pdb_id
         entry = [pdb_id, ligand_id] + line[1:3]
         try:
             measurement = line[4]
@@ -168,6 +171,9 @@ def get_args():
     parser.add_argument(
         "-l", "--lig_dir", help="Directory to download ligand files from RCSB."
     )
+    parser.add_argument(
+        "-m", "--lig_map", help="Parsed file to use to map protein id to ligand id."
+    )
 
     return parser.parse_args()
 
@@ -175,8 +181,17 @@ def get_args():
 def main():
     args = get_args()
 
+    # Get protein ligand mapping
+    if args.lig_map:
+        lig_df = pandas.read_csv(args.lig_map, index_col=0)
+        lig_map = dict(zip(lig_df["PDB_id"], lig_df["ligand_id"]))
+    else:
+        lig_map = {}
+
     # Parse all index files
-    all_dfs = [parse_index(fn, args.str_dir, args.lig_dir) for fn in args.in_files]
+    all_dfs = [
+        parse_index(fn, args.str_dir, args.lig_dir, lig_map) for fn in args.in_files
+    ]
     # Combine and save
     df = pandas.concat(all_dfs)
     df.to_csv(args.out_file)
