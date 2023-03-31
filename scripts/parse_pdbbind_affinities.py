@@ -27,15 +27,11 @@ def fix_units(measurement):
 
 def get_smiles(fn):
     # Load molecule
-    ifs = oechem.oemolistream()
-    ifs.SetFlavor(
-        oechem.OEFormat_SDF,
-        oechem.OEIFlavor_SDF_Default,
-    )
-    ifs.open(fn)
-    mol = oechem.OEGraphMol()
-    oechem.OEReadMolecule(ifs, mol)
-    ifs.close()
+    mol = load_openeye_sdf(fn)
+
+    # Reset implicit H count in case SDF files are messed up
+    for a in mol.GetAtoms():
+        a.SetImplicitHCount(oechem.OEDefaultMDLHCount(a))
 
     # Get smiles
     return oechem.OEMolToSmiles(mol)
