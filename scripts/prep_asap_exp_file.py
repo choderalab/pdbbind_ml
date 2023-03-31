@@ -6,6 +6,7 @@ asapdiscovery pipeline (namely, asapdiscovery.data.utils.cdd_to_schema).
 import argparse
 import numpy as np
 import pandas
+from rdkit import Chem
 
 
 def convert_row(r):
@@ -30,7 +31,10 @@ def convert_row(r):
     #  * ProteaseAssay_Fluorescence_Dose-Response_Weizmann: IC50 CI (Lower) (µM)
     #  * ProteaseAssay_Fluorescence_Dose-Response_Weizmann: IC50 CI (Upper) (µM)
 
-    smi = r["iso_smiles"] if "iso_smiles" in r.index else r["str_smiles"]
+    if ("iso_smiles" in r.index) and (not pandas.isna(r["iso_smiles"])):
+        smi = r["iso_smiles"]
+    else:
+        smi = r["str_smiles"]
     ligand_id = r["ligand_id"]
     # For now, only handle IC50 measurements
     # Ki/Kd conversion will need to use Cheng-Prussof
@@ -83,7 +87,17 @@ def main():
 
     df_in = pandas.read_csv(args.in_file, index_col=0)
     df_out = df_in.apply(convert_row, axis=1)
+
+    # Filter out invalid SMILES from RCSB
+    keep_idx = []
+    for _, r in df_out.iterrows():
+        smi = r["suspected_SMILES"]
+        keep_idx += [bool(Chem.MolFromSmiles(smi))]
+    print(f"Removing {sum(~keep_idx)} entries with invalid SMILES", flush=True)
+    df_out = df_out.loc[keep_idx, :]
+
     df_out.to_csv(args.out_file, index=False)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
