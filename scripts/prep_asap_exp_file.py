@@ -93,7 +93,12 @@ def main():
     for _, r in df_out.iterrows():
         smi = r["suspected_SMILES"]
         keep_idx += [bool(Chem.MolFromSmiles(smi))]
-    print(f"Removing {sum(~keep_idx)} entries with invalid SMILES", flush=True)
+        if not keep_idx[-1]:
+            print(r["Canonical PostEra ID"], smi, flush=True)
+    print(
+        f"Removing {len(keep_idx) - sum(keep_idx)} entries with invalid SMILES",
+        flush=True,
+    )
     df_out = df_out.loc[keep_idx, :]
 
     df_out.to_csv(args.out_file, index=False)
