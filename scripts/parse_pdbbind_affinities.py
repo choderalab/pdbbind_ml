@@ -101,7 +101,11 @@ def parse_index(fn, str_dir, lig_dir=None):
 
         line = line.split()
         pdb_id = line[0]
-        ligand_id = line[-1].strip("()")
+        ligand_id = line[-1]
+        if (ligand_id[0] == "(") and (ligand_id[-1] == ")"):
+            ligand_id = ligand_id.strip("()")
+        else:
+            ligand_id = pdb_id
         entry = [pdb_id, ligand_id] + line[1:3]
         try:
             measurement = line[4]
